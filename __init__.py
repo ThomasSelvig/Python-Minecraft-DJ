@@ -1,6 +1,8 @@
 import time, random, keyboard as kb, mido, os, json, requests
 from PIL import Image
 from io import BytesIO
+from progressbar import progressbar
+from multiprocessing import Pool
 
 from minecraft.authentication import AuthenticationToken
 from minecraft.networking.connection import Connection
@@ -28,46 +30,96 @@ move player with (home, delete, end, pgdn) buttons
 move player crosshair with arrow keys
 '''
 
-class PixelArt:
-	COLORS = {
-		"white": (0xe9, 0xec, 0xec),
-		"orange": (0xf0, 0x76, 0x13),
-		"magenta": (0xbd, 0x44, 0xb3),
-		"light_blue": (0x3a, 0xaf, 0xd9),
-		"yellow": (0xf8, 0xc6, 0x27),
-		"lime": (0x70, 0xb9, 0x19),
-		"pink": (0xed, 0x8d, 0xac),
-		"gray": (0x3e, 0x44, 0x47),
-		"light_gray": (0x8e, 0x8e, 0x86),
-		"cyan": (0x15, 0x89, 0x91),
-		"purple": (0x79, 0x2a, 0xac),
-		"blue": (0x35, 0x39, 0x9d),
-		"brown": (0x72, 0x47, 0x28),
-		"green": (0x54, 0x6d, 0x1b),
-		"red": (0xa1, 0x27, 0x22),
-		"black": (0x14, 0x15, 0x19)
-	}
+# i'm using global vars because pyCraft won't work object oriented ffs
+pos = None
+songQueue = []
+pixelArtCommands = []
+path = os.path.dirname(os.path.abspath(__file__))
 
-	def __init__(self, name=None, url=None):
+
+class StoreAllTileMaps:
+	def run():
+		print(time.asctime())
+		with open(path+"/allColors.json", "a+") as fs:
+			with Pool(10) as p: # multiprocessing
+				labelList = p.map(StoreAllTileMaps.getBlockUsingMP, StoreAllTileMaps.getCol())
+				print(time.asctime())
+				for color, label in zip(StoreAllTileMaps.getCol(), labelList):
+					r, g, b = color
+					fs.write(":".join([str(r), str(g), str(b), label]) + "\n")
+
+	def getBlockUsingMP(rgb):
+		return PixelArt.getBlock(*rgb)
+
+	def getCol():
+		for r in range(256):
+			for g in range(256):
+				for b in range(256):
+					yield r, g, b
+
+
+class PixelArt:
+	if "tileColors.json" in os.listdir(path):
+		with open(path+"/tileColors.json", encoding="utf8") as fs:
+			COLORS = json.load(fs)
+	else:
+		COLORS = {
+			"white_wool": (0xe9, 0xec, 0xec),
+			"orange_wool": (0xf0, 0x76, 0x13),
+			"magenta_wool": (0xbd, 0x44, 0xb3),
+			"light_blue_wool": (0x3a, 0xaf, 0xd9),
+			"yellow_wool": (0xf8, 0xc6, 0x27),
+			"lime_wool": (0x70, 0xb9, 0x19),
+			"pink_wool": (0xed, 0x8d, 0xac),
+			"gray_wool": (0x3e, 0x44, 0x47),
+			"light_gray_wool": (0x8e, 0x8e, 0x86),
+			"cyan_wool": (0x15, 0x89, 0x91),
+			"purple_wool": (0x79, 0x2a, 0xac),
+			"blue_wool": (0x35, 0x39, 0x9d),
+			"brown_wool": (0x72, 0x47, 0x28),
+			"green_wool": (0x54, 0x6d, 0x1b),
+			"red_wool": (0xa1, 0x27, 0x22),
+			"black_wool": (0x14, 0x15, 0x19)
+		}
+
+
+	def __init__(self, name=None, url=None, size=None):
 		assert name or url
+		sendChat("Downloading...")
 		im = PixelArt.getImage(name=name) if name else PixelArt.getImage(url=url)
+		sendChat("Downloaded pic: " + str(im.size))
+		
+		if size != None:
+			print("making thumbnail")
+			im = im.resize(size)
+
 		pixels = im.load()
 		alpha = len(pixels[0, 0]) == 4
 		
-		self.canvas = {
-			(x, y): PixelArt.getBlock(
-				pixels[x, y][0], 
-				pixels[x, y][1], 
-				pixels[x, y][2], 
-				alpha=pixels[x, y][3] if alpha else None) 
-			for x in range(im.size[0]) for y in range(im.size[1])
-		}
-		# for (x, y), (r, g, b, *_) in pixels.items():
-		# 	self.canvas[x, y] = PixelArt.getBlock(r, g, b)
+		# self.canvas = {
+		# 	(x, y): PixelArt.getBlock(
+		# 		pixels[x, y][0], 
+		# 		pixels[x, y][1], 
+		# 		pixels[x, y][2], 
+		# 		alpha=pixels[x, y][3] if alpha else None) 
+		# 	for x in progressbar(range(im.size[0])) for y in range(im.size[1])
+		# }
+		self.canvas = {}
+		for x in progressbar(range(im.size[0])):
+			for y in range(im.size[1]):
+				self.canvas[x, y] = PixelArt.getBlock(
+					pixels[x, y][0], 
+					pixels[x, y][1], 
+					pixels[x, y][2], 
+					alpha=pixels[x, y][3] if alpha else None
+				)
+			if x % 50 == 0:
+				# this process takes a long time: this is to avoid getting kicked
+				updatePosition()
 
 	def buildCanvas(self, ox, oy, oz):
 		#ox, oy, oz = pos["x"], pos["y"], pos["z"]
-
+		# DONT EXPECT THIS PROCESS TO BE FINISHED BEFORE IT STARTS EXECUTING COMMANDS: IT'S IN A DIFFERENT THREAD
 		for (x, y), block in self.canvas.items():
 			pixelArtCommands.append(f"/setblock {ox+x} {oy-y} {oz} {block}")
 
@@ -77,7 +129,8 @@ class PixelArt:
 			r = requests.get(url)
 			try:
 				return Image.open(BytesIO(r.content))
-			except:
+			except Exception as e:
+				print("Image from URL error:\n" + str(e))
 				return None
 		else:
 			return Image.open(f"{path}/images/{name}.png")
@@ -98,7 +151,7 @@ class PixelArt:
 			))
 			dc[difference] = color
 
-		return "minecraft:" + dc[min(dc)] + "_wool"
+		return dc[min(dc)]
 
 
 def setPosition(posPacket):
@@ -173,14 +226,16 @@ def onChatMessage(packet):
 		if user != "Inventoxz":
 			return None
 
-		if msg.count(":") == 1:
+		colonCount = msg[:5].count(":") if len(msg) >= 5 else msg.count(":")
+
+		if colonCount == 1:
 			print("Adding to queue: " + (song := msg[1:]))
 			songQueue.append(song)
 
-		elif msg.count(":") == 2:
+		elif colonCount == 2:
 			exec(msg[2:])
 
-		elif msg.count(":") == 3:
+		elif colonCount == 3:
 			msg = msg[3:]
 
 			if msg.startswith("left"):
@@ -322,10 +377,12 @@ def main():
 		movementControl()
 
 		if len(pixelArtCommands) > 0:
+			updatePosition()
 			for i, cmd in enumerate(pixelArtCommands):
-				if i != 0 and i % 100 == 0:
+				if i != 0 and i % 1000 == 0:
 					print(f"At index {i}, pausing")
-					time.sleep(5) # delay between each 100th block placed
+					updatePosition()
+					time.sleep(0.1) # delay between each 100th block placed
 				sendChat(cmd)
 
 			pixelArtCommands.clear()
@@ -348,13 +405,8 @@ def main():
 		updatePosition()
 
 
-if __name__ == '__main__':
-	# i'm using global vars because pyCraft won't work object oriented ffs
-	pos = None
-	songQueue = []
-	pixelArtCommands = []
-	path = os.path.dirname(os.path.abspath(__file__))
 
+if __name__ == '__main__':
 	# connect and register listeners
 	dj = Connection("127.0.0.1", username="dummy_thicc")
 	dj.connect()

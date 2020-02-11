@@ -1,8 +1,14 @@
 from PIL import Image
-from os import listdir
-import json
+import json, os
 
+aliases = {
+	"bone_block_side": "bone_block",
+	"hay_block_side": "hay_block",
+	"quartz_block_side": "quartz_block",
+	"melon_side": "melon"
+}
 whitelist = [
+	"log",
 	"planks",
 	"concrete",
 	"terracotta",
@@ -16,10 +22,17 @@ whitelist = [
 	"andesite",
 	"granite",
 	"diorite",
-	"block"
+	"block",
+	"sponge",
+	"melon",
+	"prismarine",
+	"quartz",
+	"bedrock"
 ]
 blacklist = [
+	"frosted",
 	"mcmeta",
+	"door",
 	"grass_block",
 	"stairs",
 	"slab",
@@ -37,14 +50,19 @@ blacklist = [
 	"_on",
 	"torch",
 	"stonecutter",
-	"structure"
+	"structure",
+	"glowstone",
+	"campfire",
+	"wall",
+	"stem",
+	"quartz_ore"
 ]
 
-path = "C:/Users/Thomas/AppData/Roaming/.minecraft/versions/1.15.1/assets/minecraft/textures/block"
+path = f"{os.path.dirname(os.path.abspath(__file__))}/1.15.2 assets/minecraft/textures/block"
 approved = []
 
 # approval process
-for file in listdir(path):
+for file in os.listdir(path):
 	blacklisted = any([term in file for term in blacklist])
 	whitelisted = any([term in file for term in whitelist])
 
@@ -68,6 +86,12 @@ for file in approved:
 				b += p[2]
 
 		pxCount = im.size[0]*im.size[1]
-		colors[file.replace(".png", "")] = (r/pxCount, g/pxCount, b/pxCount)
+		name = file.replace(".png", "")
+		if name in aliases:
+			name = aliases[name]
 
-print(json.dumps(colors, indent=4))
+		colors[name] = (int(r/pxCount), int(g/pxCount), int(b/pxCount))
+
+with open(f"{os.path.dirname(os.path.abspath(__file__))}/tileColors.json", "w+", encoding="utf8") as fs:
+	json.dump(colors, fs, indent=4)
+print(len(colors)) # 102
