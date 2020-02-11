@@ -1,5 +1,5 @@
 import time, random, keyboard as kb, mido, os, json, requests
-from PIL import Image
+from PIL import Image, ImageGrab
 from io import BytesIO
 from progressbar import progressbar
 from multiprocessing import Pool
@@ -38,15 +38,23 @@ path = os.path.dirname(os.path.abspath(__file__))
 
 
 class StoreAllTileMaps:
+	# this can be optimized by skipping half of all colors: won't make much difference
 	def run():
 		print(time.asctime())
-		with open(path+"/allColors.json", "a+") as fs:
+		with open(path+"/allColors.txt", "a+") as fs:
 			with Pool(10) as p: # multiprocessing
 				labelList = p.map(StoreAllTileMaps.getBlockUsingMP, StoreAllTileMaps.getCol())
 				print(time.asctime())
+				last = None
 				for color, label in zip(StoreAllTileMaps.getCol(), labelList):
-					r, g, b = color
-					fs.write(":".join([str(r), str(g), str(b), label]) + "\n")
+					if label != last: # if the label changes, write the new thing to file
+						# store hex values
+						r, g, b = tuple(map(lambda i: hex(i)[2:], color))
+						# format hex values: 6 -> 06, cd -> cd, f -> 0f
+						r, g, b = tuple(map(lambda i: "0"+i if len(i) < 2 else i, (r, g, b)))
+
+						fs.write(f"{r}{g}{b}:{label}" + "\n")
+					last = label
 
 	def getBlockUsingMP(rgb):
 		return PixelArt.getBlock(*rgb)
@@ -83,65 +91,64 @@ class PixelArt:
 		}
 
 
-	def __init__(self, name=None, url=None, size=None):
-		assert name or url
-		sendChat("Downloading...")
-		im = PixelArt.getImage(name=name) if name else PixelArt.getImage(url=url)
-		sendChat("Downloaded pic: " + str(im.size))
+	def __init__(self, pos=None, name=None, url=None, size=None):
+		if name:
+			self.im = Image.open(f"{path}/images/{name}.png")
+		elif url:
+			self.im = PixelArt.getImage(url)
+		else:
+			self.im = ImageGrab.grabclipboard()
 		
 		if size != None:
 			print("making thumbnail")
-			im = im.resize(size)
+			self.im = self.im.resize(size)
 
-		pixels = im.load()
-		alpha = len(pixels[0, 0]) == 4
+		if self.im.size[1] > 256:
+			self.im = self.im.resize((int(self.im.size[0]/(self.im.size[1]/256)), 256))
+
+		self.poses = [(x, y) for y in range(self.im.size[1]) for x in range(self.im.size[0])]
 		
-		# self.canvas = {
-		# 	(x, y): PixelArt.getBlock(
-		# 		pixels[x, y][0], 
-		# 		pixels[x, y][1], 
-		# 		pixels[x, y][2], 
-		# 		alpha=pixels[x, y][3] if alpha else None) 
-		# 	for x in progressbar(range(im.size[0])) for y in range(im.size[1])
-		# }
-		self.canvas = {}
-		for x in progressbar(range(im.size[0])):
-			for y in range(im.size[1]):
-				self.canvas[x, y] = PixelArt.getBlock(
-					pixels[x, y][0], 
-					pixels[x, y][1], 
-					pixels[x, y][2], 
-					alpha=pixels[x, y][3] if alpha else None
-				)
-			if x % 50 == 0:
-				# this process takes a long time: this is to avoid getting kicked
-				updatePosition()
+		with Pool(5) as p:
+			self.tiles = p.map(self._getBlock, self.poses)
+
+		if pos:
+			self.buildCanvas(*pos)
+
 
 	def buildCanvas(self, ox, oy, oz):
 		#ox, oy, oz = pos["x"], pos["y"], pos["z"]
 		# DONT EXPECT THIS PROCESS TO BE FINISHED BEFORE IT STARTS EXECUTING COMMANDS: IT'S IN A DIFFERENT THREAD
-		for (x, y), block in self.canvas.items():
+		for (x, y), block in zip(self.poses, self.tiles): #self.canvas.items():
 			pixelArtCommands.append(f"/setblock {ox+x} {oy-y} {oz} {block}")
 
 
-	def getImage(name=None, url=None):
-		if url:
-			r = requests.get(url)
-			try:
-				return Image.open(BytesIO(r.content))
-			except Exception as e:
-				print("Image from URL error:\n" + str(e))
-				return None
-		else:
-			return Image.open(f"{path}/images/{name}.png")
+	def getImage(url):
+		r = requests.get(url)
+		try:
+			return Image.open(BytesIO(r.content))
+		except Exception as e:
+			print("Image from URL error:\n" + str(e))
+			return None
 
+
+	def _getBlock(self, p):
+		x, y = p
+		pixels = self.im.load()
+		alpha = len(pixels[0, 0]) == 4
+
+		return PixelArt.getBlock(
+			pixels[x, y][0], 
+			pixels[x, y][1], 
+			pixels[x, y][2], 
+			alpha=pixels[x, y][3] if alpha else None
+		)
 
 	def getBlock(r, g, b, alpha=None):
-		# find closest color using 3d pythagoras. weighted approach since some colors are of less importance
-		# when calculating the difference like this, the "sqrt" part is irrelevant
 		if alpha == 0:
 			return "minecraft:air"
 
+		# find closest color using 3d pythagoras. weighted approach since some colors are of less importance
+		# when calculating the difference like this, the "sqrt" part is irrelevant
 		dc = {}
 		for color, (r2, g2, b2) in PixelArt.COLORS.items():
 			difference = sum((
@@ -380,9 +387,10 @@ def main():
 			updatePosition()
 			for i, cmd in enumerate(pixelArtCommands):
 				if i != 0 and i % 1000 == 0:
-					print(f"At index {i}, pausing")
+					#print(f"At index {i}, pausing")
 					updatePosition()
 					time.sleep(0.1) # delay between each 100th block placed
+				
 				sendChat(cmd)
 
 			pixelArtCommands.clear()
@@ -404,6 +412,8 @@ def main():
 		
 		updatePosition()
 
+if False and __name__ == "__main__":
+	StoreAllTileMaps.run()
 
 
 if __name__ == '__main__':

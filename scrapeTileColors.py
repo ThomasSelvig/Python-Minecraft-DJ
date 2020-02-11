@@ -21,7 +21,6 @@ whitelist = [
 	"dirt",
 	"andesite",
 	"granite",
-	"diorite",
 	"block",
 	"sponge",
 	"melon",
@@ -55,7 +54,8 @@ blacklist = [
 	"campfire",
 	"wall",
 	"stem",
-	"quartz_ore"
+	"quartz_ore",
+	"birch"
 ]
 
 path = f"{os.path.dirname(os.path.abspath(__file__))}/1.15.2 assets/minecraft/textures/block"
