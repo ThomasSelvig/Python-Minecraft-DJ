@@ -1,8 +1,11 @@
 import time, random, keyboard as kb, mido, os, json, requests
+
 from PIL import Image, ImageGrab
 from io import BytesIO
 from progressbar import progressbar
 from multiprocessing import Pool
+
+from loadFromFile import Schematic
 
 from minecraft.authentication import AuthenticationToken
 from minecraft.networking.connection import Connection
@@ -17,7 +20,7 @@ from minecraft.networking.types import (
 )
 '''
 build pixelart ingame by using this command as inventoxz:
-::PixelArt(url="").buildCanvas(x, y, z)
+::PixelArt(url="", pos=(0, 0, 0))
 
 play music:
 add song to queue:
@@ -25,6 +28,8 @@ add song to queue:
 play next song in queue:
 press PGUP button
 skip song / disconnect: F4
+
+run python commands directly from chat with :: prefix    example:   ::print("abc")    or  ::sendChat("abc")
 
 move player with (home, delete, end, pgdn) buttons
 move player crosshair with arrow keys
@@ -159,6 +164,23 @@ class PixelArt:
 			dc[difference] = color
 
 		return dc[min(dc)]
+
+
+class MultiDimPrint:
+	def __init__(self, url, pos):
+		# read schematic from virtual file object created from downloaded content
+		schemData = requests.get(url).content
+		self.schem = Schematic(fileobj=BytesIO(schemData))
+
+		self.build(pos)
+
+	def build(self, pos):
+		for block in self.schem.blocks():
+			# this is looping a generator function to conserve memory
+			block["x"] += pos[0]
+			block["y"] += pos[1]
+			block["z"] += pos[2]
+			pixelArtCommands.append("/setblock {x} {y} {z} {id}".format(**block))
 
 
 def setPosition(posPacket):
@@ -389,8 +411,9 @@ def main():
 				if i != 0 and i % 1000 == 0:
 					#print(f"At index {i}, pausing")
 					updatePosition()
-					time.sleep(0.1) # delay between each 100th block placed
+					time.sleep(0.1) # delay between lots of blocks
 				
+				print(cmd)
 				sendChat(cmd)
 
 			pixelArtCommands.clear()
@@ -405,7 +428,9 @@ def main():
 			#playSong("thetop")
 
 		if kb.is_pressed("ctrl+shift"):
-			pass#playSong("giornostheme", scale=True)
+			#MultiDimPrint("https://cdn.discordapp.com/attachments/255681374025941003/677868965674090526/wall.schematic", (219, 231, -155))
+			while kb.is_pressed("ctrl+shift"):
+				pass
 
 		if kb.is_pressed("f4"):
 			exit()
