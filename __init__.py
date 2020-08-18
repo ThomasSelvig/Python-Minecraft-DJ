@@ -42,35 +42,6 @@ chatmsgsToSend = []
 PATH = os.path.dirname(os.path.abspath(__file__))
 
 
-class StoreAllTileMaps:
-	# this can be optimized by skipping half of all colors: won't make much difference
-	def run():
-		print(time.asctime())
-		with open(PATH+"/allColors.txt", "a+") as fs:
-			with Pool(10) as p: # multiprocessing
-				labelList = p.map(StoreAllTileMaps.getBlockUsingMP, StoreAllTileMaps.getCol())
-				print(time.asctime())
-				last = None
-				for color, label in zip(StoreAllTileMaps.getCol(), labelList):
-					if label != last: # if the label changes, write the new thing to file
-						# store hex values
-						r, g, b = tuple(map(lambda i: hex(i)[2:], color))
-						# format hex values: 6 -> 06, cd -> cd, f -> 0f
-						r, g, b = tuple(map(lambda i: "0"+i if len(i) < 2 else i, (r, g, b)))
-
-						fs.write(f"{r}{g}{b}:{label}" + "\n")
-					last = label
-
-	def getBlockUsingMP(rgb):
-		return PixelArt.getBlock(*rgb)
-
-	def getCol():
-		for r in range(256):
-			for g in range(256):
-				for b in range(256):
-					yield r, g, b
-
-
 class PixelArt:
 	if "tileColors.json" in os.listdir(PATH):
 		with open(PATH+"/tileColors.json", encoding="utf8") as fs:

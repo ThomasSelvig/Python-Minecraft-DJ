@@ -95,3 +95,44 @@ for file in approved:
 with open(f"{os.path.dirname(os.path.abspath(__file__))}/tileColors.json", "w+", encoding="utf8") as fs:
 	json.dump(colors, fs, indent=4)
 print(len(colors)) # 102
+
+
+
+
+
+
+
+class DEPRECATED:
+	"""
+	This is a totally unfeacible way to look up colors
+	i don't even know why i thought this would be a good idea
+	results generated from this class are stored in allColors.txt which i did you the favor of adding to .gitignore
+	"""
+
+	class StoreAllTileMaps:
+		# this can be optimized by skipping half of all colors: won't make much difference
+		def run():
+			print(time.asctime())
+			with open(PATH+"/allColors.txt", "a+") as fs:
+				with Pool(10) as p: # multiprocessing
+					labelList = p.map(StoreAllTileMaps.getBlockUsingMP, StoreAllTileMaps.getCol())
+					print(time.asctime())
+					last = None
+					for color, label in zip(StoreAllTileMaps.getCol(), labelList):
+						if label != last: # if the label changes, write the new thing to file
+							# store hex values
+							r, g, b = tuple(map(lambda i: hex(i)[2:], color))
+							# format hex values: 6 -> 06, cd -> cd, f -> 0f
+							r, g, b = tuple(map(lambda i: "0"+i if len(i) < 2 else i, (r, g, b)))
+
+							fs.write(f"{r}{g}{b}:{label}" + "\n")
+						last = label
+
+		def getBlockUsingMP(rgb):
+			return PixelArt.getBlock(*rgb)
+
+		def getCol():
+			for r in range(256):
+				for g in range(256):
+					for b in range(256):
+						yield r, g, b
