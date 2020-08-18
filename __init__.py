@@ -1,4 +1,4 @@
-import time, random, keyboard as kb, mido, os, json, requests
+import time, random, keyboard as kb, mido, os, json, requests, random
 
 from PIL import Image, ImageGrab
 from io import BytesIO
@@ -38,15 +38,15 @@ move player crosshair with arrow keys
 # i'm using global vars because pyCraft won't work object oriented ffs
 pos = None
 songQueue = []
-pixelArtCommands = []
-path = os.path.dirname(os.path.abspath(__file__))
+chatmsgsToSend = []
+PATH = os.path.dirname(os.path.abspath(__file__))
 
 
 class StoreAllTileMaps:
 	# this can be optimized by skipping half of all colors: won't make much difference
 	def run():
 		print(time.asctime())
-		with open(path+"/allColors.txt", "a+") as fs:
+		with open(PATH+"/allColors.txt", "a+") as fs:
 			with Pool(10) as p: # multiprocessing
 				labelList = p.map(StoreAllTileMaps.getBlockUsingMP, StoreAllTileMaps.getCol())
 				print(time.asctime())
@@ -72,8 +72,8 @@ class StoreAllTileMaps:
 
 
 class PixelArt:
-	if "tileColors.json" in os.listdir(path):
-		with open(path+"/tileColors.json", encoding="utf8") as fs:
+	if "tileColors.json" in os.listdir(PATH):
+		with open(PATH+"/tileColors.json", encoding="utf8") as fs:
 			COLORS = json.load(fs)
 	else:
 		COLORS = {
@@ -98,7 +98,7 @@ class PixelArt:
 
 	def __init__(self, pos=None, name=None, url=None, size=None):
 		if name:
-			self.im = Image.open(f"{path}/images/{name}.png")
+			self.im = Image.open(f"{PATH}/images/{name}.png")
 		elif url:
 			self.im = PixelArt.getImage(url)
 		else:
@@ -124,7 +124,7 @@ class PixelArt:
 		#ox, oy, oz = pos["x"], pos["y"], pos["z"]
 		# DONT EXPECT THIS PROCESS TO BE FINISHED BEFORE IT STARTS EXECUTING COMMANDS: IT'S IN A DIFFERENT THREAD
 		for (x, y), block in zip(self.poses, self.tiles): #self.canvas.items():
-			pixelArtCommands.append(f"/setblock {ox+x} {oy-y} {oz} {block}")
+			chatmsgsToSend.append(f"/setblock {ox+x} {oy-y} {oz} {block}")
 
 
 	def getImage(url):
@@ -180,10 +180,14 @@ class MultiDimPrint:
 			block["x"] += pos[0]
 			block["y"] += pos[1]
 			block["z"] += pos[2]
-			pixelArtCommands.append("/setblock {x} {y} {z} {id}".format(**block))
+			chatmsgsToSend.append("/setblock {x} {y} {z} {id}".format(**block))
 
 
-def setPosition(posPacket):
+def _setPosition(posPacket):
+	"""
+	when a positional update packet is received from the server
+	updates the locally stored position
+	"""
 	global pos
 	newValues = {k: v for k, v in posPacket.__dict__.items() if k in ["x", "y", "z", "yaw", "pitch", "flags"]}
 	
@@ -196,7 +200,10 @@ def setPosition(posPacket):
 
 
 def updatePosition(**kwargs):#x=None, y=None, z=None, yaw=None, pitch=None, onGround=None):
-	if pos == None and len(kwargs) < 5:
+	"""
+	client to server position packet
+	"""
+	if pos is None and len(kwargs) < 5:
 		return None
 
 	packet = serverbound.play.PositionAndLookPacket()
@@ -212,8 +219,9 @@ def updatePosition(**kwargs):#x=None, y=None, z=None, yaw=None, pitch=None, onGr
 
 
 def movementControl():
-	global pos
-
+	"""
+	called in main event loop
+	"""
 	if kb.is_pressed("left"):
 		if pos["yaw"] > -180:
 			pos["yaw"] -= 1
@@ -244,16 +252,20 @@ def movementControl():
 		pos["z"] += .5
 
 
-def onChatMessage(packet):
+def _onChatMessage(packet):
+	"""
+	when a chat message packet arrives
+	todo: document detailed
+	"""
 	try:
 		if packet.position != 0:
-			return None
+			return
 
 		data = json.loads(packet.json_data)
 		user, msg = data["with"][0]["insertion"], data["with"][1]
 
-		if user != "Inventoxz":
-			return None
+		if user != "Inventoxz":  # only I may use the bot
+			return
 
 		colonCount = msg[:5].count(":") if len(msg) >= 5 else msg.count(":")
 
@@ -286,39 +298,9 @@ def sendChat(msg):
 		message=msg))
 
 
-def goto(nx, ny, nz):
-	amount = 3
-	nx, ny, nz = int(nx), int(ny), int(nz)
-	# get rounded pos of the bot
-	getPos = lambda: tuple(map(lambda i: int(round(i)), (pos["x"], pos["y"], pos["z"])))
-
-	while (p := getPos()) != (nx, ny, nz):
-		x, y, z = p
-		
-		if x < nx:
-			x += amount if nx-x >= amount else nx-x
-		elif x > nx:
-			x -= amount if x-nx >= amount else x-nx
-
-		if y < ny:
-			y += amount if ny-y >= amount else ny-y
-		elif y > ny:
-			y -= amount if y-ny >= amount else y-ny
-
-		if z < nz:
-			z += amount if nz-z >= amount else nz-z
-		elif z > nz:
-			z -= amount if z-nz >= amount else z-nz
-
-		pos["x"], pos["y"], pos["z"] = x, y, z
-		print(x, y, z)
-		updatePosition()
-		time.sleep(0.25)
-
-
-def playNote(xOffset=0, zOffset=0, tune=None):
+def _playNote(xOffset=0, zOffset=0, tune=None):
 	# tune is 0-24 (25 unique noises)
-	if tune != None:
+	if tune is not None:
 		xOffset = tune % 5
 		zOffset = tune // 5
 
@@ -328,9 +310,9 @@ def playNote(xOffset=0, zOffset=0, tune=None):
 	# -2 because player is standing in the middle of the 5x5 array of noteblocks
 	# just like pianoTuner()
 	location = Position( 
-		x=int(round(pos["x"]-2+xOffset)), 
-		y=int(round(pos["y"]-1)), 
-		z=int(round(pos["z"]-2+zOffset)))
+		x=int(pos["x"]-2+xOffset), 
+		y=int(pos["y"]-1), 
+		z=int(pos["z"]-2+zOffset))
 	# start digging
 	dj.write_packet(PlayerDiggingPacket(
 		status=0, 
@@ -343,6 +325,12 @@ def playNote(xOffset=0, zOffset=0, tune=None):
 		face=1))
 
 
+def centerPosition():
+	# update pos to middle of block
+	pos["x"], pos["z"] = [int(i) + .5 for i in (pos["x"], pos["z"])]
+	updatePosition()
+
+
 def pianoTuner():
 	'''
 	x x x x x
@@ -353,8 +341,6 @@ def pianoTuner():
 	"x" = noteblock
 	"o" = player, standing directly on top of a noteblock
 	'''
-
-	global pos
 	origin = {**pos}
 	
 	for z in range(5):
@@ -375,7 +361,22 @@ def pianoTuner():
 			time.sleep(0.05)
 
 
-def playSong(songName, factor=1, scale=False): # scale: put the note into the noteblock range (from midi range: 21-108)
+def buildPiano():
+	# build noteblocks
+	for i in range(25):
+		x = int(pos["x"]) - 2 + i % 5
+		z = int(pos["z"]) - 2 + i // 5
+		chatmsgsToSend.append("/setblock {} {} {} note_block".format(x, int(pos["y"])-1, z))
+
+
+def setFoundation(block):
+	for i in range(25):
+		x = int(pos["x"]) - 2 + i % 5
+		z = int(pos["z"]) - 2 + i // 5
+		chatmsgsToSend.append("/setblock {} {} {} {}".format(x, int(pos["y"])-2, z, block))
+
+
+def playSong(songName, factor=1):  # (midi range: 21-108)
 	avail = list(range(54, 54+25)) # if the midi tune is not in this range, it's unavailible in the game
 
 	for msg in mido.MidiFile("midis/"+songName+".mid"):
@@ -383,9 +384,11 @@ def playSong(songName, factor=1, scale=False): # scale: put the note into the no
 		if not msg.is_meta:
 			# if not hasattr(msg, "velocity") or msg.velocity == 0:
 			# 	# 54-79
-			if hasattr(msg, "note") and (scale or msg.note in avail):
-				note = msg.note-54 if not scale else int((msg.note-21)/(108-21)*25//1)
-				playNote(tune=note)
+			if hasattr(msg, "note") and msg.note in avail:
+				note = int((msg.note-21)/(108-21)*25//1)
+				# print(note)
+				_playNote(tune=note)
+				dj.write_packet(serverbound.play.AnimationPacket(hand=random.randint(0, 1)))
 				
 				# bot panic button
 				if kb.is_pressed("f4"):
@@ -405,9 +408,10 @@ def main():
 
 		movementControl()
 
-		if len(pixelArtCommands) > 0:
+		if len(chatmsgsToSend) > 0:
+			# this code is so terrible because of the pyCraft library: this is a hacky workaround for the library not working as OOP
 			updatePosition()
-			for i, cmd in enumerate(pixelArtCommands):
+			for i, cmd in enumerate(chatmsgsToSend):
 				if i != 0 and i % 1000 == 0:
 					#print(f"At index {i}, pausing")
 					updatePosition()
@@ -416,14 +420,17 @@ def main():
 				print(cmd)
 				sendChat(cmd)
 
-			pixelArtCommands.clear()
+			chatmsgsToSend.clear()
 
 		if kb.is_pressed("pgup"):# playbutton
 			
 			if len(songQueue) > 0:
-				print("\nCurrently playing:", (songName := songQueue.pop(0)))
-				playSong(songName)
-				print("Finished: " + songName)
+				sendChat("Currently playing: " + str(songName := songQueue.pop(0)))
+				try:
+					playSong(songName)
+					sendChat("Finished: " + songName)
+				except:
+					sendChat("Failed to play the song.")
 			
 			#playSong("thetop")
 
@@ -437,20 +444,18 @@ def main():
 		
 		updatePosition()
 
-if False and __name__ == "__main__":
-	StoreAllTileMaps.run()
-
 
 if __name__ == '__main__':
 	# connect and register listeners
 	dj = Connection("127.0.0.1", username="dummy_thicc")
 	dj.connect()
-	dj.register_packet_listener(setPosition, clientbound.play.player_position_and_look_packet.PlayerPositionAndLookPacket)
-	dj.register_packet_listener(onChatMessage, clientbound.play.ChatMessagePacket)
+	dj.register_packet_listener(_setPosition, clientbound.play.player_position_and_look_packet.PlayerPositionAndLookPacket)
+	dj.register_packet_listener(_onChatMessage, clientbound.play.ChatMessagePacket)
 	
 	print("Connecting...")
-	while pos == None:
+	while pos is None:
 		# wait for server to update dj's position
 		pass
 	print("Connected")
+	sendChat("<3")
 	main()
