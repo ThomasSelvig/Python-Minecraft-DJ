@@ -12,3 +12,7 @@ The bot (dummy_thicc) works by reading midi files and converting the midi note t
 Some notes are too high for the bot to play on a noteblock: In that case, the note isn't played at all.
 
 ![piano_range](https://github.com/ThomasSelvig/Python-Minecraft-DJ/blob/master/pianorange.png)
+
+## Slight disclaimer for anyone trying to run this
+This was made half a year ago with no intent of being public. The code isn't that well documented, and it has only been successfully tested with 32bit python3.8 (64bit doesn't work). \
+Todo: update `requirements.txt`
