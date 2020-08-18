@@ -3,4 +3,4 @@
 
 ## The noteblock range
 The noteblocks in minecraft only cover 25 notes (for multiple instruments)
-![piano_range](https://raw.githubusercontent.com/ThomasSelvig/Python-Minecraft-DJ/master/pianorange.png)
+![piano_range](https://github.com/ThomasSelvig/Python-Minecraft-DJ/blob/master/pianorange.png)
