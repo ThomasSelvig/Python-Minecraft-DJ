@@ -15,4 +15,5 @@ Some notes are too high for the bot to play on a noteblock: In that case, the no
 
 ## Slight disclaimer for anyone trying to run this
 This was made half a year ago with no intent of being public. The code isn't that well documented, and it has only been successfully tested with 32bit python3.8 (64bit doesn't work). \
+Also, the minecraft server (has to be pyCraft compatible (1.15.1 and below)) needs the server-property `online-mode=False` \
 Todo: update `requirements.txt`
